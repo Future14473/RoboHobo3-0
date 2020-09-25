@@ -1,2 +1,4 @@
 # Project exclude paths
 /out/
+/.idea/
+/RoboHobo3-0.iml
