@@ -11,6 +11,9 @@ public class Calculations {
        |  left 2          left  1
        ~ -  - > x
      */
+    static double forward;
+    static double strafe;
+
 
     static int rightFrontI = 0;
     static int leftFrontI = 1;
@@ -22,6 +25,18 @@ public class Calculations {
 
     //turning variables
     static double maxVel = 245; //TODO not the real measurement
+
+    public static void move(double direction, double amountToRotate){
+        // note that direction is the direction the robot should move towards in degrees
+        // amount to rotate is the amount you want the robot to rotate
+
+        direction = Math.toRadians(direction);
+
+        forward = Math.sin(direction);
+        strafe = Math.cos(direction);
+
+        setMotorVelocities(forward, strafe, amountToRotate);
+    }
 
     public static void setMotorVelocities(double forward, double strafe, double turn) {
 
