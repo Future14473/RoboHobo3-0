@@ -31,6 +31,17 @@ public class RingDetection {
 
     public static final int CURVE_EXTENSION = 5;
 
+    public static final double x0 = 20;
+    public static final double y0 = 30;
+    public static final int yP = 720;
+    public static final int xP = 960;
+    public static final double theta0 = Math.atan(y0/x0);
+    public static final double viewAngle = Math.PI - 2* theta0;
+    public static final double realX0 = 24;
+    public static final double slope = 0.6;
+
+
+
     Mat resized = new Mat();
     Mat recolored = new Mat();
     Mat threshold = new Mat();
@@ -54,7 +65,8 @@ public class RingDetection {
         if(type.equals("r")){
             for(int i = 0; i<1000; i++){
                 ImageIO.write(camera.getImage(), "JPG", new File("temp.jpg"));
-                HighGui.imshow("results", mark_rings(picSetup("temp.jpg")));
+                Mat pic = picSetup("temp.jpg");
+                HighGui.imshow("results", markRings(pic, find_rings(pic)));
 //                Mat thresh = find_yellows(picSetup("temp.jpg"));
 //                HighGui.imshow("thresholds", thresh);
                 HighGui.waitKey(1);
@@ -63,7 +75,8 @@ public class RingDetection {
         else if(type.equals("wr")){
             for(int i = 0; i<1000; i++) {
                 ImageIO.write(camera.getImage(), "JPG", new File("temp.jpg"));
-                HighGui.imshow("results", mark_wobble(picSetup("temp.jpg"), "red"));
+                Mat pic = picSetup("temp.jpg");
+                HighGui.imshow("results", markWobble(pic, find_wobble(pic, "red")));
 //                Mat thresh = find_reds(picSetup("temp.jpg"));
 //                dilate(thresh, thresh, kernel);
 //                HighGui.imshow("thresholds", thresh);
@@ -74,7 +87,8 @@ public class RingDetection {
         else{
             for(int i = 0; i<1000; i++) {
                 ImageIO.write(camera.getImage(), "JPG", new File("temp.jpg"));
-                HighGui.imshow("results", mark_wobble(picSetup("temp.jpg"), "blue"));
+                Mat pic = picSetup("temp.jpg");
+                HighGui.imshow("results", markWobble(pic, find_wobble(pic, "blue")));
 //                Mat thresh = find_blues(picSetup("temp.jpg"));
 //                dilate(thresh, thresh, kernel);
 //                HighGui.imshow("thresholds", thresh);
@@ -104,27 +118,30 @@ public class RingDetection {
 
         if(set.equals("o")) {
             for (String pic : picsO) {
-                HighGui.imshow("ree", mark_rings(picSetup(pic)));
+                Mat proc = picSetup(pic);
+                HighGui.imshow("ree", markRings(proc, find_rings(proc)));
                 HighGui.waitKey();
             }
         }
         if(set.equals("e")) {
             for(String pic : picsE){
-                HighGui.imshow("ree", mark_rings(picSetup(pic)));
+                Mat proc = picSetup(pic);
+                HighGui.imshow("ree", markRings(proc, find_rings(proc)));
                 HighGui.waitKey();
             }
         }
         if(set.equals("q")) {
             for(String pic : picsQ){
-                HighGui.imshow("ree", mark_rings(picSetup(pic)));
+                Mat proc = picSetup(pic);
+                HighGui.imshow("ree", markRings(proc, find_rings(proc)));
                 HighGui.waitKey();
             }
         }
         if(set.equals("w")) {
             for(String pic : picsW){
-                HighGui.imshow("ree", mark_wobble(picSetup(pic), "blue"));
-                HighGui.waitKey();
-                HighGui.imshow("ree", mark_wobble(picSetup(pic), "red"));
+                Mat proc = picSetup(pic);
+                HighGui.imshow("ree", markWobble(proc, find_wobble(proc, "blue")));
+                HighGui.imshow("ree", markWobble(proc, find_wobble(proc, "red")));
                 HighGui.waitKey();
             }
         }
@@ -137,7 +154,6 @@ public class RingDetection {
         double scale = 960.0/raw.height();
         Imgproc.resize(raw, resized, new Size(Math.round(raw.width() * scale), Math.round(raw.height() * scale)));
         this.value = (int)(avgValue(resized)*1.35 - 93.26);
-        System.out.println(value);
         return resized;
     }
 
@@ -234,19 +250,19 @@ public class RingDetection {
         return output;
     }
 
-    public int closeIn(double[][] list, double x, double y, double width, double height, double epsilonW, double epsilonH){
-        for(int i = 0; i< list.length; i++){
-            if(Math.abs(y - list[i][4]) < epsilonH/2 && Math.abs(x - list[i][1]) < epsilonW/2){
+    public int closeIn(ArrayList<double[]> list, double x, double y, double width, double height, double epsilonW, double epsilonH){
+        for(int i = 0; i< list.size(); i++){
+            if(Math.abs(y - list.get(i)[4]) < epsilonH/2 && Math.abs(x - list.get(i)[1]) < epsilonW/2){
                 return -2;
             }
-            if(Math.abs(list[i][1] - x) < epsilonW && Math.abs(list[i][2] - width) < epsilonW && Math.abs(list[i][5] - height) < epsilonH){
+            if(Math.abs(list.get(i)[1] - x) < epsilonW && Math.abs(list.get(i)[2] - width) < epsilonW && Math.abs(list.get(i)[5] - height) < epsilonH){
                 return i;
             }
         }
         return -1;
     }
 
-    public Mat mark_rings(Mat input){
+    public ArrayList<double[]> find_rings(Mat input){
         List<MatOfPoint> contours = new ArrayList<>();
 
         threshold = find_yellows(input);
@@ -260,8 +276,7 @@ public class RingDetection {
         });
 
         //finding stacked rectangles and marking
-        double[][] rectsData = new double[contours.size()][6];
-        int used = 0;
+        ArrayList<double[]> rectsData= new ArrayList<>();
 
         //sorting "rings" into stacks
         for(MatOfPoint contour:contours){
@@ -282,42 +297,33 @@ public class RingDetection {
                     System.out.println("Overlap");
                 }
                 else if(index == -1){
-                    rectsData[used][0] = 1;
-                    rectsData[used][1] = subrect.x;
-                    rectsData[used][2] = subrect.width;
-                    rectsData[used][3] = subrect.y + subrect.height;
-                    rectsData[used][4] = subrect.y;
-                    rectsData[used][5] = subrect.height;
-                    used += 1;
+                    rectsData.add(new double[6]);
+                    rectsData.get(rectsData.size() - 1)[0] = 1;
+                    rectsData.get(rectsData.size() - 1)[1] = subrect.x;
+                    rectsData.get(rectsData.size() - 1)[2] = subrect.width;
+                    rectsData.get(rectsData.size() - 1)[3] = subrect.y + subrect.height;
+                    rectsData.get(rectsData.size() - 1)[4] = subrect.y;
+                    rectsData.get(rectsData.size() - 1)[5] = subrect.height;
                 }
                 else{
-                    double occ = rectsData[index][0];
-                    double avgX = rectsData[index][1];
-                    double avgW = rectsData[index][2];
-                    double maxY = rectsData[index][3];
-                    double minY = rectsData[index][4];
-                    double avgH = rectsData[index][5];
-                    rectsData[index][0] += 1;
-                    rectsData[index][1] = (subrect.x + occ*avgX)/(occ + 1);
-                    rectsData[index][2] = (subrect.width + occ*avgW)/(occ + 1);
-                    rectsData[index][3] = Math.max(subrect.y + subrect.height, maxY);
-                    rectsData[index][4] = Math.min(subrect.y, minY);
-                    rectsData[index][5] = (subrect.height + occ*avgH)/(occ + 1);
+                    double occ = rectsData.get(index)[0];
+                    double avgX = rectsData.get(index)[1];
+                    double avgW = rectsData.get(index)[2];
+                    double maxY = rectsData.get(index)[3];
+                    double minY = rectsData.get(index)[4];
+                    double avgH = rectsData.get(index)[5];
+                    rectsData.get(index)[0] += 1;
+                    rectsData.get(index)[1] = (subrect.x + occ*avgX)/(occ + 1);
+                    rectsData.get(index)[2] = (subrect.width + occ*avgW)/(occ + 1);
+                    rectsData.get(index)[3] = Math.max(subrect.y + subrect.height, maxY);
+                    rectsData.get(index)[4] = Math.min(subrect.y, minY);
+                    rectsData.get(index)[5] = (subrect.height + occ*avgH)/(occ + 1);
                 }
             }
         }
-
         //labeling found stacks
-        for(double[] data: rectsData){
-            if(data[0] > 0){
-                Rect rect = new Rect((int) data[1], (int) data[4], (int) data[2], (int) (data[3] - data[4]));
-                Imgproc.rectangle(input, rect.tl(), rect.br(), new Scalar(255, 255, 0), 2);
-                Imgproc.putText(input, "" + (int)data[0], new Point(data[1] + data[2]/2, data[4]), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 255, 0), 2);
-            }
-        }
-
         threshold.release();
-        return input;
+        return rectsData;
     }
 
     public Boolean wobble_stick(Mat input, MatOfPoint contour){
@@ -341,7 +347,7 @@ public class RingDetection {
         return contours.size() > 0;
     }
 
-    public Mat mark_wobble(Mat input, String side){
+    public Rect find_wobble(Mat input, String side){
         List<MatOfPoint> contours = new ArrayList<>();
         if(side.equals("blue")){
             threshold = find_blues(input);
@@ -363,13 +369,69 @@ public class RingDetection {
             return ((rect.area() < 1500) || (rect.width > rect.height)) || !wobble_stick(threshold, m);
         });
 
-        //labeling found wobble
-        for(MatOfPoint wobble: contours){
-            Rect rect = Imgproc.boundingRect(wobble);
-            Imgproc.rectangle(input, rect.tl(), rect.br(), new Scalar(0, 255, 255), 2);
+       MatOfPoint max = new MatOfPoint();
+       double area = -1;
+        for(MatOfPoint contour: contours){
+            if(contourArea(contour) > area){
+                area = contourArea(contour);
+                max = contour;
+            }
         }
-
-        return input;
+        return Imgproc.boundingRect(max);
     }
+
+    public double find_Angle(Rect obj){
+        double centerX = obj.x + (double)obj.width/2;
+        double centerY = obj.y + obj.height;
+        double y = pix2Y(centerY);
+        double x = pix2RealX(centerX, centerY);
+        double angle = Math.atan(y/x) - Math.PI/2;
+        if(y/x < 0){
+            angle += Math.PI;
+        }
+        System.out.println("Angle: " + (Math.toDegrees(angle)));
+        System.out.println("Y: " + y);
+        System.out.println("X: " + x);
+        System.out.println();
+        return Math.toDegrees(angle);
+    }
+
+    public double pix2Y(double pixY){
+        double angle = (yP - pixY)/yP * viewAngle;
+        return y0 * Math.tan(theta0 + angle) + x0;
+    }
+
+    public double pix2RealX(double pixX, double pixY){
+        double y = pix2Y(pixY);
+        double fullX = realX0 + y*slope;
+        System.out.println("real x: " + fullX);
+        return (pixX - xP/2.0)/(xP) * fullX;
+    }
+
+    public Mat markRings(Mat input, ArrayList<double[]> rectsData){
+        Mat copy = input.clone();
+        for(double[] data: rectsData){
+            if(data[0] > 0){
+                Rect rect = new Rect((int) data[1], (int) data[4], (int) data[2], (int) (data[3] - data[4]));
+                double Angle = find_Angle(rect) - 90;
+                Imgproc.rectangle(copy, rect.tl(), rect.br(), new Scalar(255, 255, 0), 2);
+                Imgproc.putText(copy, "" + (int)data[0], new Point(data[1] + data[2]/2, data[4]), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 255, 0), 2);
+                Imgproc.putText(copy, "Angle: " + (int)Angle, new Point(data[1] + data[2]/2, data[4] + 100), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 255, 0), 2);
+
+            }
+        }
+        return copy;
+    }
+
+    public Mat markWobble(Mat input, Rect rect){
+        //labeling found wobble
+        Mat copy = input.clone();
+        double Angle = find_Angle(rect) - 90;
+        Imgproc.rectangle(copy, rect.tl(), rect.br(), new Scalar(0, 255, 255), 2);
+        Imgproc.putText(copy, "Wobble Goal", new Point(rect.x, rect.y -100), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(255, 255, 0), 2);
+        Imgproc.putText(copy, "Angle: " + (int)Angle, new Point(rect.x, rect.y -50 ), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 0, 255), 2);
+        return copy;
+    }
+
 
 }
