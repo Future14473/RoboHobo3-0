@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import com.github.sarxos.webcam.Webcam;
@@ -27,7 +28,7 @@ public class RingDetection {
 
     public static final double STICKR = 9;
     public static final double SMAXR = STICKR * 1.2;
-    public static final double SMINR = STICKR * 0.4;
+    public static final double SMINR = STICKR * 0.6;
 
     public static final int CURVE_EXTENSION = 5;
 
@@ -37,10 +38,8 @@ public class RingDetection {
     public static final int xP = 960;
     public static final double theta0 = Math.atan(y0/x0);
     public static final double viewAngle = Math.PI - 2* theta0;
-    public static final double realX0 = 24;
-    public static final double slope = 0.6;
-
-
+    public static final double realX0 = 35;
+    public static final double slope = 0.46;
 
     Mat resized = new Mat();
     Mat recolored = new Mat();
@@ -48,27 +47,28 @@ public class RingDetection {
     Mat subthreshold = new Mat();
     Mat submat = new Mat();
     int value = 0;
+    int saturation = 0;
     Mat cam = new Mat();
     Webcam camera = Webcam.getDefault();
 
     public static void main(String[] args) throws IOException {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
         RingDetection detection = new RingDetection();
-        //detection.testPics("e");
+        //detection.testPics("w");
         detection.testCam("wb");
     }
     public void testCam(String type) throws IOException {
         camera.setViewSize(WebcamResolution.VGA.getSize());
         camera.open();
-        Mat kernel = Imgproc.getStructuringElement(CV_SHAPE_ELLIPSE, new Size(5, 5));
+        Mat kernel = Imgproc.getStructuringElement(CV_SHAPE_ELLIPSE, new Size(7, 7));
 
         if(type.equals("r")){
             for(int i = 0; i<1000; i++){
                 ImageIO.write(camera.getImage(), "JPG", new File("temp.jpg"));
                 Mat pic = picSetup("temp.jpg");
                 HighGui.imshow("results", markRings(pic, find_rings(pic)));
-//                Mat thresh = find_yellows(picSetup("temp.jpg"));
-//                HighGui.imshow("thresholds", thresh);
+                Mat thresh = find_yellows(picSetup("temp.jpg"));
+                HighGui.imshow("thresholds", thresh);
                 HighGui.waitKey(1);
             }
         }
@@ -89,9 +89,9 @@ public class RingDetection {
                 ImageIO.write(camera.getImage(), "JPG", new File("temp.jpg"));
                 Mat pic = picSetup("temp.jpg");
                 HighGui.imshow("results", markWobble(pic, find_wobble(pic, "blue")));
-//                Mat thresh = find_blues(picSetup("temp.jpg"));
-//                dilate(thresh, thresh, kernel);
-//                HighGui.imshow("thresholds", thresh);
+                Mat thresh = find_blues(picSetup("temp.jpg"));
+                dilate(thresh, thresh, kernel);
+                HighGui.imshow("thresholds", thresh);
                 HighGui.waitKey(1);
             }
         }
@@ -115,6 +115,7 @@ public class RingDetection {
         for(int i = 0; i < 1; i++){
             picsW[i] = "w" + (i+1) + ".jpg";
         }
+
 
         if(set.equals("o")) {
             for (String pic : picsO) {
@@ -141,6 +142,7 @@ public class RingDetection {
             for(String pic : picsW){
                 Mat proc = picSetup(pic);
                 HighGui.imshow("ree", markWobble(proc, find_wobble(proc, "blue")));
+                HighGui.waitKey();
                 HighGui.imshow("ree", markWobble(proc, find_wobble(proc, "red")));
                 HighGui.waitKey();
             }
@@ -153,7 +155,7 @@ public class RingDetection {
         Mat resized = new Mat();
         double scale = 960.0/raw.height();
         Imgproc.resize(raw, resized, new Size(Math.round(raw.width() * scale), Math.round(raw.height() * scale)));
-        this.value = (int)(avgValue(resized)*1.35 - 93.26);
+        avgValues(resized);
         return resized;
     }
 
@@ -164,7 +166,6 @@ public class RingDetection {
         double scale = 960.0/input.height();
         Imgproc.resize(recolored, resized, new Size(Math.round(input.width() * scale), Math.round(input.height() * scale)));
         recolored.release();
-        this.value = (int)(avgValue(resized)*1.35 - 93.26);
         return resized;
     }
 
@@ -173,33 +174,41 @@ public class RingDetection {
         return recolored;
     }
 
-    public int avgValue(Mat input){
+    public void avgValues(Mat input){
         Mat copy = copyHSV(input);
-        int total = 0;
-        int area = input.height() * input.width();
-        for(int y = 0; y < input.height(); y++){
-            for(int x = 0; x < input.width(); x++){
-                total += copy.get(y, x)[2];
+        ArrayList<Integer> values = new ArrayList<>();
+        ArrayList<Integer> saturations = new ArrayList<>();
+        int area = input.height() * input.width()/16;
+        for(int y = 0; y < input.height(); y+=3){
+            for(int x = 0; x < input.width(); x+=3){
+                values.add((Integer)(int)copy.get(y, x)[2]);
+                saturations.add((Integer)(int)copy.get(y, x)[1]);
             }
         }
         copy.release();
-        return (int)(total/area);
+        Collections.sort(values);
+        Collections.sort(saturations);
+        int medVal = values.get((int)(values.size()/2));
+        int medSat = saturations.get((int)(saturations.size()/2));
+        value = Math.max((int)(-0.65*medVal + 165.42), 0);
+        saturation = Math.max((int)(1.19*medSat + 38.78), 0);
+        System.out.println(value + ", " + saturation);
     }
 
     public Mat find_yellows(Mat input){
         Mat copy = copyHSV(input);
-        Core.inRange(copy, new Scalar(7, 67, 110), new Scalar(30, 255, 255), threshold);
+        Core.inRange(copy, new Scalar(7, saturation, value), new Scalar(30, 255, 255), threshold);
         return threshold;
     }
 
     public Mat find_blues(Mat input){
         Mat copy = copyHSV(input);
-        Core.inRange(copy, new Scalar(110, 55, value - 25), new Scalar(125, 255, 255), threshold);
+        Core.inRange(copy, new Scalar(110, saturation, value), new Scalar(125, 255, 255), threshold);
         return threshold;
     }
     public Mat find_reds(Mat input){
         Mat copy = copyHSV(input);
-        Core.inRange(copy, new Scalar(0, 80, value - 25), new Scalar(11, 255, 255), threshold);
+        Core.inRange(copy, new Scalar(0, saturation, value), new Scalar(11, 255, 255), threshold);
         return threshold;
     }
 
@@ -266,7 +275,6 @@ public class RingDetection {
         List<MatOfPoint> contours = new ArrayList<>();
 
         threshold = find_yellows(input);
-
         Imgproc.findContours(threshold, contours, new Mat(), Imgproc.CHAIN_APPROX_NONE, Imgproc.CHAIN_APPROX_SIMPLE);
 
         //initial filtering
@@ -339,12 +347,12 @@ public class RingDetection {
 
         //initial filtering
         contours.removeIf(m -> {
-            Rect subrect = Imgproc.boundingRect(m);
-            double r = (double) subrect.height/subrect.width;
-            return ((subrect.area() < 1000) || (r > SMAXR) || (r < SMINR));
+            double height2 = Math.pow(Imgproc.boundingRect(m).height, 2);
+            double area = contourArea(m);
+            return ((area < 1000) || (area < height2/SMAXR) || (area > height2/SMINR));
         });
 
-        return contours.size() > 0;
+        return (contours.size() > 0);
     }
 
     public Rect find_wobble(Mat input, String side){
@@ -358,15 +366,17 @@ public class RingDetection {
         else{
             System.out.println("ERROR: Not a valid side.");
         }
-        Mat kernel = Imgproc.getStructuringElement(CV_SHAPE_ELLIPSE, new Size(5, 5));
+        Mat kernel = Imgproc.getStructuringElement(CV_SHAPE_ELLIPSE, new Size(7, 7));
+        Mat kernelE = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(CURVE_EXTENSION, 1));
         Imgproc.dilate(threshold, threshold, kernel);
+        Imgproc.erode(threshold, threshold, kernelE);
         Imgproc.findContours(threshold, contours, new Mat(), Imgproc.CHAIN_APPROX_NONE, Imgproc.CHAIN_APPROX_SIMPLE);
 
         //initial filtering
         contours.removeIf(m -> {
             Rect rect = Imgproc.boundingRect(m);
             double r = (double) rect.height/rect.width;
-            return ((rect.area() < 1500) || (rect.width > rect.height)) || !wobble_stick(threshold, m);
+            return ((rect.area() < 1000) || (rect.width > rect.height)) || !wobble_stick(threshold, m);
         });
 
        MatOfPoint max = new MatOfPoint();
@@ -377,7 +387,8 @@ public class RingDetection {
                 max = contour;
             }
         }
-        return Imgproc.boundingRect(max);
+        Rect maxRect = Imgproc.boundingRect(max);
+        return new Rect(maxRect.x, maxRect.y, maxRect.width, (int)Math.round(maxRect.height*(28.0/24)));
     }
 
     public double find_Angle(Rect obj){
@@ -389,10 +400,10 @@ public class RingDetection {
         if(y/x < 0){
             angle += Math.PI;
         }
-        System.out.println("Angle: " + (Math.toDegrees(angle)));
-        System.out.println("Y: " + y);
-        System.out.println("X: " + x);
-        System.out.println();
+//        System.out.println("Angle: " + (Math.toDegrees(angle)));
+//        System.out.println("Y: " + y);
+//        System.out.println("X: " + x);
+//        System.out.println();
         return Math.toDegrees(angle);
     }
 
@@ -404,7 +415,7 @@ public class RingDetection {
     public double pix2RealX(double pixX, double pixY){
         double y = pix2Y(pixY);
         double fullX = realX0 + y*slope;
-        System.out.println("real x: " + fullX);
+        // System.out.println("real x: " + fullX);
         return (pixX - xP/2.0)/(xP) * fullX;
     }
 
@@ -413,7 +424,7 @@ public class RingDetection {
         for(double[] data: rectsData){
             if(data[0] > 0){
                 Rect rect = new Rect((int) data[1], (int) data[4], (int) data[2], (int) (data[3] - data[4]));
-                double Angle = find_Angle(rect) - 90;
+                double Angle = find_Angle(rect);
                 Imgproc.rectangle(copy, rect.tl(), rect.br(), new Scalar(255, 255, 0), 2);
                 Imgproc.putText(copy, "" + (int)data[0], new Point(data[1] + data[2]/2, data[4]), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 255, 0), 2);
                 Imgproc.putText(copy, "Angle: " + (int)Angle, new Point(data[1] + data[2]/2, data[4] + 100), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 255, 0), 2);
@@ -426,7 +437,7 @@ public class RingDetection {
     public Mat markWobble(Mat input, Rect rect){
         //labeling found wobble
         Mat copy = input.clone();
-        double Angle = find_Angle(rect) - 90;
+        double Angle = find_Angle(rect);
         Imgproc.rectangle(copy, rect.tl(), rect.br(), new Scalar(0, 255, 255), 2);
         Imgproc.putText(copy, "Wobble Goal", new Point(rect.x, rect.y -100), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(255, 255, 0), 2);
         Imgproc.putText(copy, "Angle: " + (int)Angle, new Point(rect.x, rect.y -50 ), Imgproc.FONT_HERSHEY_SIMPLEX, 1, new Scalar(0, 0, 255), 2);
